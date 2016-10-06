@@ -1,11 +1,12 @@
+
+
 import sys
-import visa
 import pyqtgraph as pg
 from numpy import *
-import QueryDAQ
 import AJAMonitorGUI
 import time
-from labjack import u12
+from QueryDAQ import QueryDAQ
+from DAQData import DAQData
 
 from PyQt5 import QtGui, QtWidgets, QtCore
 
@@ -16,162 +17,149 @@ class AJAMonitorGUI(QtWidgets.QMainWindow, AJAMonitorGUI.Ui_MainWindow, object):
 		QtWidgets.QMainWindow.__init__(self)
 		self.setupUi(self)
 		self.connectButtons()
-		self.xdata_DC1 = []
-		self.xdata_DC2 = []
-		self.ydata_ai0 = []
-		self.ydata_ai1 = []
-		self.ydata_ai2 = []
-		self.ydata_ai3 = []
+		self.setupDAQ()
+		self.initializeData()
+		self.makePens()
+		self.decoratePlots()
+		return
 
-		self.threshold_V = 10
-		self.threshold_I = 0.10
+	def connectButtons(self):
+		self.startButton.clicked.connect(self.start)
+		self.clearButton.clicked.connect(self.clear)
+		self.startButton.setStyleSheet("background-color: green")
+		return
 
+	def initializeData(self):
+		maxlength = 1000
+		self.ai0 = DAQData(maxlength)
+		self.ai1 = DAQData(maxlength)
+		self.ai2 = DAQData(maxlength)
+		self.ai3 = DAQData(maxlength)
+		return
+
+	def setupDAQ(self):
+		self.QueryDAQ = QueryDAQ()
+		self.QueryDAQ.connectionError.connect(self.msg)
+		self.QueryDAQ.dataReady.connect(self.updateGUI)
+		return
+
+	def start(self):
+		self.QueryDAQ.setFreq(self.rateBox.value())
+		self.startButton.setText("Stop")
+		self.startButton.setStyleSheet("background-color: red")
+		self.startButton.clicked.disconnect(self.start)
+		self.startButton.clicked.connect(self.stop)
+		self.QueryDAQ.start()
+		return
+
+	def stop(self):
+		self.startButton.setText("Start")
+		self.startButton.setStyleSheet("background-color: green")
+		self.startButton.clicked.disconnect(self.stop)
+		self.startButton.clicked.connect(self.start)
+		self.QueryDAQ.stop()
+		return
+
+	def clear(self):
+		self.ai0.clearData()
+		self.ai1.clearData()
+		self.ai2.clearData()
+		self.ai3.clearData()
+		self.clearPlots()
+		return
+
+	def msg(self, text):
+		self.statusBar().showMessage(text, 5000)
+		return
+
+	def updateGUI(self, d_ai0, d_ai1, d_ai2, d_ai3):
+		self.updateData(d_ai0, d_ai1, d_ai2, d_ai3)
+		self.clearPlots()
+		self.plotData()
+		self.repaintPlots()
+		return
+
+	def updateData(self, d_ai0, d_ai1, d_ai2, d_ai3):
+		self.ai0.addData(d_ai0)
+		self.ai1.addData(d_ai1)
+		self.ai2.addData(d_ai2)
+		self.ai3.addData(d_ai3)
+		return
+
+	def clearPlots(self):
+		self.plot1_V.clear()
+		self.plot1_I.clear()
+		self.plot2_V.clear()
+		self.plot2_I.clear()
+		return
+
+	def makePens(self):
 		self.wpen = pg.mkPen(color='w')
 		self.rpen = pg.mkPen(color='r')
 		self.wbrush = pg.mkBrush(color='w')
 		self.rbrush = pg.mkBrush(color='r')
 
-		self.decoratePlot()
-		return
+	def decoratePlots(self):
+		self.plot1_V = self.plot1.getPlotItem()						# Get the plotItem in self.plot
+		self.plot1_I = pg.ViewBox()									# Make a new ViewBox to draw stuff into
+		self.plot1_I_axis = pg.AxisItem('right', pen=self.rpen)  	# Make a new AxisItem for plotting
 
-	def connectButtons(self):
-		self.startButton.clicked.connect(self.startButtonClicked)
-		self.stopButton.clicked.connect(self.stopButtonClicked)
-		self.clearButton.clicked.connect(self.clearButtonClicked)
-		self.refreshButton.clicked.connect(self.refreshButtonClicked)
+		self.plot1_V.layout.addItem(self.plot1_I_axis, 2, 3)  		# Add the new AxisItem to the old plotItem layout
+		self.plot1_V.scene().addItem(self.plot1_I)  				# Add the new ViewBox to the old plotItem scene
+		self.plot1_I_axis.linkToView(self.plot1_I)  				# Link the new Axis to the new ViewBox
+		self.plot1_I.setXLink(self.plot1_V)  						# Link the axes of the new ViewBox to the original plotItem
+		self.plot1_I_axis.setLabel("Current", units="A")
+		self.plot1_V.setLabel('left', "Voltage", "V")
+		self.plot1_V.setLabel('bottom', "Time", 's')
+		self.plot1.setTitle("MDX 500: DC1")
 
-		self.refreshButtonClicked()
-		return
+		self.plot2_V = self.plot2.getPlotItem()  				# Get the plotItem in self.plot2
+		self.plot2_I = pg.ViewBox()  							# Make a new ViewBox to draw stuff into
+		self.plot2_I_axis = pg.AxisItem('right', pen=self.rpen) # Make a new AxisItem for plotting
 
-	def startButtonClicked(self):
-		self.t0 = time.time()
-		self.daq = QueryDAQ.QueryDAQ(u12.U12(), freq=self.rateBox.value())
-		self.daq.dataReady.connect(self.updatePlot)
-		self.daq.start()
-		self.startButton.setEnabled(False)
-		return
-
-	def stopButtonClicked(self):
-		# self.queryThread.stop()
-		self.daq.stop()
-		self.startButton.setEnabled(True)
-		return
-
-	def clearButtonClicked(self):
-		self.xdata_DC1 = []
-		self.xdata_DC2 = []
-		self.ydata_ai0 = []
-		self.ydata_ai1 = []
-		self.ydata_ai2 = []
-		self.ydata_ai3 = []
-
-		self.plot_V.clear()
-		self.plot_I.clear()
-		self.plot2_V.clear()
-		self.plot2_I.clear()
-
-		self.statusBar.showMessage("Data entries stored: {}".format(sum(list(map(len, [self.xdata_DC1, self.xdata_DC2, self.ydata_ai0, self.ydata_ai1, self.ydata_ai2, self.ydata_ai3])))))
-		return
-
-	def refreshButtonClicked(self):
-		self.gpibBox.clear()
-		instruments = visa.ResourceManager().list_resources()
-		self.gpibBox.addItems(instruments)
-		return
-
-	def decoratePlot(self):
-		self.plot_V = self.plot.getPlotItem()								#Get the plotItem in self.plot
-		self.plot_I = pg.ViewBox()											#Make a new ViewBox to draw stuff into
-		self.plot_I_axis = pg.AxisItem('right', pen=self.rpen)				#Make a new AxisItem for plotting
-
-		self.plot_V.layout.addItem(self.plot_I_axis, 2, 3)					#Add the new AxisItem to the old plotItem layout
-		self.plot_V.scene().addItem(self.plot_I)							#Add the new ViewBox to the old plotItem scene
-		self.plot_I_axis.linkToView(self.plot_I)  # Link the new Axis to the new ViewBox
-		self.plot_I.setXLink(self.plot_V)									#Link the axes of the new ViewBox to the original plotItem
-		self.plot_I_axis.setLabel("Current", units="A")
-		self.plot_V.setLabel('left', "Voltage", "V")
-		self.plot_V.setLabel('bottom', "Time", 's')
-		self.plot.setTitle("MDX 500: DC1")
-
-
-		self.plot2_V = self.plot2.getPlotItem()								#Get the plotItem in self.plot2
-		self.plot2_I = pg.ViewBox()											#Make a new ViewBox to draw stuff into
-		self.plot2_I_axis = pg.AxisItem('right', pen=self.rpen)				#Make a new AxisItem for plotting
-
-		self.plot2_V.layout.addItem(self.plot2_I_axis, 2, 3)				#Add the new AxisItem to the old plotItem layout
-		self.plot2_V.scene().addItem(self.plot2_I)							#Add the new ViewBox to the old plotItem scene
-		self.plot2_I_axis.linkToView(self.plot2_I)  # Link the new Axis to the new ViewBox
-		self.plot2_I.setXLink(self.plot2_V)  # Link the axes of the new ViewBox to the original plotItem
+		self.plot2_V.layout.addItem(self.plot2_I_axis, 2, 3)  	# Add the new AxisItem to the old plotItem layout
+		self.plot2_V.scene().addItem(self.plot2_I)  			# Add the new ViewBox to the old plotItem scene
+		self.plot2_I_axis.linkToView(self.plot2_I)  			# Link the new Axis to the new ViewBox
+		self.plot2_I.setXLink(self.plot2_V)  					# Link the axes of the new ViewBox to the original plotItem
 		self.plot2_I_axis.setLabel("Current", units="A")
 		self.plot2_V.setLabel('left', "Voltage", "V")
 		self.plot2_V.setLabel('bottom', "Time", 's')
 		self.plot2.setTitle("MDX 500: DC2")
 
 		self.updateViews()
-		self.plot_V.vb.sigResized.connect(self.updateViews)
+		self.plot1_V.vb.sigResized.connect(self.updateViews)
 		self.plot2_V.vb.sigResized.connect(self.updateViews)
 
-		self.plot.repaint()
-		self.plot2.repaint()
-		self.plot3.repaint()
-		return
-
-	def updatePlot(self, ai0, ai1, ai2, ai3):
-		self.clearPlots()
-		self.appendData(time.time()-self.t0, ai0, ai1, ai2, ai3)
-		# self.rerangePlots()
-		self.plotData()
 		self.repaintPlots()
-		return
 
-	def clearPlots(self):
-		self.plot_V.clear()
-		self.plot2_V.clear()
-		self.plot_I.clear()
-		self.plot2_I.clear()
-		# self.plot3.clear()
-		return
-
-	def appendData(self, t, ai0, ai1, ai2, ai3):
-
-
-		if ai0 > self.threshold_V and ai1 > self.threshold_I:
-			self.ydata_ai0.append(ai0)
-			self.ydata_ai1.append(ai1)
-			self.xdata_DC1.append(time.time() - self.t0)
-		if ai2 > self.threshold_V and ai3 > self.threshold_I:
-			self.ydata_ai2.append(ai2)
-			self.ydata_ai3.append(ai3)
-			self.xdata_DC2.append(time.time() - self.t0)
-		self.statusBar.showMessage("Data entries stored: {}".format(sum(list(map(len, [self.xdata_DC1, self.xdata_DC2, self.ydata_ai0, self.ydata_ai1, self.ydata_ai2, self.ydata_ai3])))))
-		return
-
-	def rerangePlots(self):
-		self.plot_V.setRange(xRange=[self.xdata_DC1[0], self.xdata_DC1[-1]], yRange=[min(self.ydata_ai0), max(self.ydata_ai0)])
-		self.plot_I.setRange(yRange=[min(self.ydata_ai1), max(self.ydata_ai1)])
-		self.plot2_V.setRange(xRange=[self.xdata_DC2[0], self.xdata_DC2[-1]], yRange=[min(self.ydata_ai2), max(self.ydata_ai2)])
-		self.plot_I.setRange(yRange=[min(self.ydata_ai3), max(self.ydata_ai3)])
-		return
-
-	def plotData(self):
-		self.plot_V.addItem(pg.PlotDataItem(x=self.xdata_DC1, y=self.ydata_ai0, pen=self.wpen, symbol='o', symbolPen=self.wpen, symbolBrush=self.wbrush, pxMode=True))
-		self.plot_I.addItem(pg.PlotDataItem(x=self.xdata_DC1, y=self.ydata_ai1, pen=self.rpen, symbol='o', symbolPen=self.rpen,symbolBrush=self.rbrush, pxMode=True))
-		self.plot2_V.addItem(pg.PlotDataItem(x=self.xdata_DC2, y=self.ydata_ai2, pen=self.wpen, symbol='o', symbolPen=self.wpen, symbolBrush=self.wbrush, pxMode=True))
-		self.plot2_I.addItem(pg.PlotDataItem(x=self.xdata_DC2, y=self.ydata_ai3, pen=self.rpen, symbol='o', symbolPen=self.rpen, symbolBrush=self.rbrush, pxMode=True))
-		return
-
-	def repaintPlots(self):
-		self.plot.repaint()
-		self.plot2.repaint()
-		self.plot3.repaint()
 		return
 
 	def updateViews(self):
-		self.plot_I.setGeometry(self.plot_V.vb.sceneBoundingRect())
-		self.plot_I.linkedViewChanged(self.plot_V.vb, self.plot_I.XAxis)
+		self.plot1_I.setGeometry(self.plot1_V.vb.sceneBoundingRect())
+		self.plot1_I.linkedViewChanged(self.plot1_V.vb, self.plot1_I.XAxis)
 		self.plot2_I.setGeometry(self.plot2_V.vb.sceneBoundingRect())
 		self.plot2_I.linkedViewChanged(self.plot2_V.vb, self.plot2_I.XAxis)
 		return
+
+	def rerangePlots(self):
+		self.plot1_V.setRange(xRange=self.ai0.getXlim(), yRange=self.ai0.getYlim())
+		self.plot1_I.setRange(yRange=self.ai1.getYlim())
+		self.plot2_V.setRange(xRange=self.ai2.getXlim(), yRange=self.ai2.getYlim())
+		self.plot_I.setRange(yRange=self.ai3.getYlim())
+		return
+
+	def repaintPlots(self):
+		self.plot1.repaint()
+		self.plot2.repaint()
+		return
+
+	def plotData(self):
+		self.plot1_V.addItem(pg.PlotDataItem(x=self.ai0.getXdata(), y=self.ai0.getYdata(), pen=self.wpen, symbol=None, symbolPen=self.wpen, symbolBrush=self.wbrush, pxMode=True))
+		self.plot1_I.addItem(pg.PlotDataItem(x=self.ai1.getXdata(), y=self.ai1.getYdata(), pen=self.rpen, symbol=None, symbolPen=self.rpen, symbolBrush=self.rbrush, pxMode=True))
+		self.plot2_V.addItem(pg.PlotDataItem(x=self.ai2.getXdata(), y=self.ai2.getYdata(), pen=self.wpen, symbol=None, symbolPen=self.wpen, symbolBrush=self.wbrush, pxMode=True))
+		self.plot2_I.addItem(pg.PlotDataItem(x=self.ai3.getXdata(), y=self.ai3.getYdata(), pen=self.rpen, symbol=None, symbolPen=self.rpen, symbolBrush=self.rbrush, pxMode=True))
+		return
+
 
 
 if __name__ == "__main__":

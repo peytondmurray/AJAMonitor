@@ -1,31 +1,42 @@
-from PyQt5 import QtCore
 
-class QueryDAQ(QtCore.QThread):
 
-	dataReady = QtCore.pyqtSignal(float, float, float, float)
+from Reader import MultiChannelAnalogInput
+from PyQt5.QtCore import QThread, pyqtSignal
 
-	def __init__(self, device, freq):
-		QtCore.QThread.__init__(self)
-		self.calibration_V = 120
-		self.calibration_I = 0.1
-		self.calibration_P = 50
+class QueryDAQ(QThread):
 
-		self.device = device
-		self.channels = [0, 1, 2, 3]
-		self.rate = 1/freq
+	dataReady = pyqtSignal(float, float, float, float)
+	connectionError = pyqtSignal(str)
+
+	def __init__(self):
+		super().__init__()
+
+		#Calibration constants for the different MDX500 power supplies
+		self.Vcal = 120
+		self.Ical = 0.1
+		self.Pcal = 50
+
+		try:
+			self.DAQ = MultiChannelAnalogInput(["Dev1/ai0", "Dev1/ai1", "Dev1/ai2", "Dev1/ai3"])
+			self.DAQ.configure()
+		except:
+			self.connectionError.emit("Issue connecting.")
+
 		self.stopFlag = False
+		return
 
 	def __del__(self):
 		self.wait()
 
-	def run(self):
-		while not self.stopFlag:
-			outputs = list(map(self.device.eAnalogIn, self.channels))
-			voltages = self.calibration_V*outputs[0]['voltage'], self.calibration_I*outputs[1]['voltage'], self.calibration_V*outputs[2]['voltage'], self.calibration_I*outputs[3]['voltage']
-			self.dataReady.emit(*voltages)
-			self.msleep(1000*self.rate)
-		return
-
 	def stop(self):
 		self.stopFlag = True
+
+	def run(self):
+		self.stopFlag = False
+		while not self.stopFlag:
+			self.dataReady.emit(self.Vcal*float(self.DAQ.read(0)), self.Ical*float(self.DAQ.read(1)), self.Vcal*float(self.DAQ.read(2)), self.Ical*float(self.DAQ.read(3)))
+			self.msleep(1000/self.freq)
+
+	def setFreq(self, freq):
+		self.freq = freq
 		return

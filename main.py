@@ -31,10 +31,10 @@ class AJAMonitorGUI(QtWidgets.QMainWindow, AJAMonitorGUI.Ui_MainWindow, object):
 
 	def initializeData(self):
 		maxlength = 1000
-		self.ai0 = DAQData(maxlength)
-		self.ai1 = DAQData(maxlength)
-		self.ai2 = DAQData(maxlength)
-		self.ai3 = DAQData(maxlength)
+		self.ai0 = DAQData(maxlength, threshold=10)
+		self.ai1 = DAQData(maxlength, threshold=0.01)
+		self.ai2 = DAQData(maxlength, threshold=10)
+		self.ai3 = DAQData(maxlength, threshold=0.01)
 		return
 
 	def setupDAQ(self):
@@ -159,8 +159,6 @@ class AJAMonitorGUI(QtWidgets.QMainWindow, AJAMonitorGUI.Ui_MainWindow, object):
 		self.plot2_V.addItem(pg.PlotDataItem(x=self.ai2.getXdata(), y=self.ai2.getYdata(), pen=self.wpen, symbol=None, symbolPen=self.wpen, symbolBrush=self.wbrush, pxMode=True))
 		self.plot2_I.addItem(pg.PlotDataItem(x=self.ai3.getXdata(), y=self.ai3.getYdata(), pen=self.rpen, symbol=None, symbolPen=self.rpen, symbolBrush=self.rbrush, pxMode=True))
 		return
-
-
 
 if __name__ == "__main__":
 	app = QtWidgets.QApplication(sys.argv)

@@ -6,20 +6,23 @@ import numpy as np
 
 class DAQData:
 
-	def __init__(self, maxlength):
+	def __init__(self, maxlength, threshold):
 		self.timedata = np.array([])
 		self.ydata = np.array([])
 		self.maxlength = maxlength
+		self.threshold = threshold
 		return
 
 	def addData(self, value):
-		if len(self.timedata) == 0:
-			self.t0 = time()
-		elif len(self.timedata) > self.maxlength:
-			self.thinData()
 
-		self.timedata = np.append(self.timedata, time()-self.t0)
-		self.ydata = np.append(self.ydata, value)
+		if value > self.threshold:
+			if len(self.timedata) == 0:
+				self.t0 = time()
+			elif len(self.timedata) > self.maxlength:
+				self.thinData()
+
+			self.timedata = np.append(self.timedata, time()-self.t0)
+			self.ydata = np.append(self.ydata, value)
 
 		return
 
